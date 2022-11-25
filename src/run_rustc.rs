@@ -35,7 +35,7 @@ fn emit_replacement(cx: &rustc_lint::LateContext<'_>, span: rustc_span::Span, re
     );
 }
 
-pub struct Lint;
+struct Lint;
 impl rustc_lint::LintPass for Lint {
     fn name(&self) -> &'static str {
         LINT.name
@@ -58,4 +58,30 @@ impl<'tcx> rustc_lint::LateLintPass<'tcx> for Lint {
             emit_replacement(cx, stmt.span, &replacement);
         }
     }
+}
+
+struct RustcCallbacks;
+impl rustc_driver::Callbacks for RustcCallbacks {
+    fn config(&mut self, config: &mut rustc_interface::Config) {
+        // Called on every crate
+        config.register_lints = Some(Box::new(|session, lints| {
+            lints.late_passes.push(Box::new(|_cx| Box::new(Lint)));
+        }));
+    }
+}
+
+pub fn run_rustc() {
+    let mut args = std::env::args();
+    let _current_executable = args.next();
+
+    let mut rustc_args = args.collect::<Vec<_>>();
+    // Not sure why we have to manually add sysroot... won't work otherwise
+    rustc_args.push("--sysroot".into());
+    rustc_args.push(
+        "/home/kangalioo/.rustup/toolchains/nightly-2022-11-03-x86_64-unknown-linux-gnu".into(),
+    );
+
+    rustc_driver::RunCompiler::new(&rustc_args, &mut RustcCallbacks)
+        .run()
+        .unwrap();
 }
