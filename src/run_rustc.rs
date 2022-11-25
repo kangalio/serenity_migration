@@ -5,9 +5,9 @@ use rustc_lint::LintContext as _;
 use crate::{parse::*, replace::*};
 
 static LINT: rustc_lint::Lint = rustc_lint::Lint {
-    name: "old_builders",
+    name: "serenity_0_12_incompatibilities",
     default_level: rustc_lint::Level::Deny,
-    desc: "finds instances of 0.11-style builder closures",
+    desc: "finds code that will not work in serenity 0.12",
     edition_lint_opts: None,
     report_in_external_macro: false,
     future_incompatible: None,
@@ -21,13 +21,9 @@ fn emit_replacement(cx: &rustc_lint::LateContext<'_>, span: rustc_span::Span, re
         &LINT,
         "closure-style builders will break in the next version of serenity",
         |b| {
-            b.span_note(
+            b.span_note(span, "replace this...").span_suggestion(
                 span,
-                "closure-style builders will break in the next version of serenity",
-            )
-            .span_suggestion(
-                span,
-                "replace with",
+                "...with",
                 replacement,
                 rustc_errors::Applicability::MachineApplicable,
             )
