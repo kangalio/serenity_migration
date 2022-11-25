@@ -1,19 +1,33 @@
 use crate::structures::*;
 
 /// `serenity::builder::CreateAMess<'_>` -> `"CreateAMess"
-fn as_serenity_builder_type(mut ty: &rustc_middle::ty::Ty<'_>) -> Option<String> {
+fn as_serenity_builder_type(
+    cx: &rustc_lint::LateContext<'_>,
+    ty: &rustc_middle::ty::Ty<'_>,
+) -> Option<String> {
     // Peel references
+    let mut ty = ty;
     while let rustc_middle::ty::TyKind::Ref(_, inner_ty, _) = ty.kind() {
         ty = inner_ty;
     }
 
-    let full_path = ty.to_string();
-    let Some(mut path) = full_path.strip_prefix("serenity::builder::") else { return None };
-    // Strip lifetime/generics
-    if let Some(i) = path.find("<") {
-        path = &path[..i];
+    // Get path of type
+    let rustc_middle::ty::TyKind::Adt(adt, _) = ty.kind() else { return None };
+    let def_path = cx.tcx.def_path(adt.0 .0.did);
+
+    // Check that we're in serenity::builder::
+    if cx.tcx.crate_name(def_path.krate).as_str() != "serenity" {
+        return None;
     }
-    Some(path.to_owned())
+    let [module, .., ty] = &*def_path.data else { return None };
+    let rustc_hir::definitions::DefPathData::TypeNs(module) = module.data else { return None };
+    let rustc_hir::definitions::DefPathData::TypeNs(ty) = ty.data else { return None };
+    if module.as_str() != "builder" {
+        return None;
+    }
+
+    // Return stripped type name
+    Some(ty.as_str().to_owned())
 }
 
 fn expr_as_ident(expr: &rustc_hir::Expr<'_>) -> Option<rustc_span::symbol::Ident> {
@@ -40,6 +54,7 @@ fn unravel_call_chain<'hir>(
             BuilderCallChain {
                 receiver,
                 receiver_type: as_serenity_builder_type(
+                    cx,
                     &cx.typeck_results().expr_ty(receiver_expr),
                 )?,
                 calls: Vec::new(),
@@ -96,7 +111,7 @@ pub fn parse_builder_closure<'hir>(
     let [param_ty] = closure.fn_decl.inputs else { return None };
     let param_ty = cx.typeck_results().node_type(param_ty.hir_id);
     let rustc_middle::ty::TyKind::Ref(_, builder, rustc_middle::mir::Mutability::Mut) = param_ty.kind() else { return None };
-    let builder_type = as_serenity_builder_type(builder)?;
+    let builder_type = as_serenity_builder_type(cx, builder)?;
 
     // Get parameter variable ID
     let closure_body = cx.tcx.hir().body(closure.body);
