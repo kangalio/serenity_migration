@@ -1,3 +1,6 @@
+//! Provides structures used by the rest of the program that represent instances of the builder
+//! pattern
+
 #[derive(Debug)]
 pub enum PreBuilderCallStatement {
     Verbatim(rustc_span::Span),

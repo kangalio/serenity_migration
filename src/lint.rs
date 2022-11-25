@@ -1,3 +1,5 @@
+//! Provides the Lint struct which implements rustc_lint::LateLintPass
+
 use rustc_lint::LintContext as _;
 
 use crate::{parse::*, replace::*};

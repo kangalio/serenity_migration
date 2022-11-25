@@ -1,3 +1,5 @@
+//! Provides functions to parse HIR into our structures
+
 use crate::structures::*;
 
 /// `serenity::builder::CreateAMess<'_>` -> `"CreateAMess"

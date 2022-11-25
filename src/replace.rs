@@ -1,3 +1,5 @@
+//! Provides functions to transform our structures into serenity 0.12 compatible builders
+
 use rustc_lint::LintContext as _;
 
 use crate::structures::*;

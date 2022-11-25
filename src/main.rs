@@ -1,3 +1,5 @@
+//! Runs rustc and passes our lint implementation into it
+
 #![feature(rustc_private)]
 #![allow(unused)]
 
