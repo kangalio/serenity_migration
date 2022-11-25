@@ -53,7 +53,7 @@ impl<'tcx> rustc_lint::LateLintPass<'tcx> for Lint {
     }
 
     fn check_stmt(&mut self, cx: &rustc_lint::LateContext<'tcx>, stmt: &rustc_hir::Stmt<'tcx>) {
-        if let Some(call_chain) = stmt_to_builder_call_chain(cx, stmt) {
+        if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
             let replacement = replace_builder_call_chain_stmt(cx, stmt.span.ctxt(), call_chain);
             emit_replacement(cx, stmt.span, &replacement);
         }

@@ -39,7 +39,7 @@ fn expr_as_ident(expr: &rustc_hir::Expr<'_>) -> Option<rustc_span::symbol::Ident
     Some(segment.ident)
 }
 
-fn unravel_call_chain<'hir>(
+fn parse_call_chain<'hir>(
     cx: &rustc_lint::LateContext<'hir>,
     method: &rustc_hir::PathSegment<'hir>,
     receiver_expr: &rustc_hir::Expr<'hir>,
@@ -48,7 +48,7 @@ fn unravel_call_chain<'hir>(
     let mut call_chain = match &receiver_expr.kind {
         // Recurse until we've reached the start of the chain
         rustc_hir::ExprKind::MethodCall(method, receiver_expr, args, _span) => {
-            unravel_call_chain(cx, method, receiver_expr, args)?
+            parse_call_chain(cx, method, receiver_expr, args)?
         }
         // We've reached the start of the chain
         _ => {
@@ -80,13 +80,13 @@ fn unravel_call_chain<'hir>(
     Some(call_chain)
 }
 
-pub fn stmt_to_builder_call_chain<'hir>(
+pub fn parse_stmt_as_builder_call_chain<'hir>(
     cx: &rustc_lint::LateContext<'hir>,
     stmt: &rustc_hir::Stmt<'hir>,
 ) -> Option<BuilderCallChain> {
     let rustc_hir::StmtKind::Semi(expr) = stmt.kind else { return None };
     let rustc_hir::ExprKind::MethodCall(method, receiver, args, _span) = expr.kind else { return None };
-    unravel_call_chain(cx, method, receiver, args)
+    parse_call_chain(cx, method, receiver, args)
 }
 
 fn parse_stmt<'hir>(
@@ -94,7 +94,7 @@ fn parse_stmt<'hir>(
     stmt: &rustc_hir::Stmt<'hir>,
     expected_receiver: rustc_span::symbol::Ident,
 ) -> PreBuilderCallStatement {
-    if let Some(call_chain) = stmt_to_builder_call_chain(cx, stmt) {
+    if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
         // In `|a| { b.call() }`, a and b must be the same
         if call_chain.receiver == expected_receiver {
             return PreBuilderCallStatement::BuilderCallChain(call_chain);
@@ -108,41 +108,45 @@ pub fn parse_builder_closure<'hir>(
     expr: &'hir rustc_hir::Expr<'hir>,
 ) -> Option<BuilderClosure> {
     let rustc_hir::ExprKind::Closure(closure) = &expr.kind else { return None };
-
-    // Get parameter type
-    let [param_ty] = closure.fn_decl.inputs else { return None };
-    let param_ty = cx.typeck_results().node_type(param_ty.hir_id);
-    let rustc_middle::ty::TyKind::Ref(_, builder, rustc_middle::mir::Mutability::Mut) = param_ty.kind() else { return None };
-    let builder_type = as_serenity_builder_type(cx, builder)?;
-
-    // Get parameter variable ID
     let closure_body = cx.tcx.hir().body(closure.body);
-    let [param] = closure_body.params else { return None };
-    let rustc_hir::PatKind::Binding(_, _, binding, _) = param.pat.kind else { return None };
+
+    let builder_type = {
+        let [param_ty] = closure.fn_decl.inputs else { return None };
+        let param_ty = cx.typeck_results().node_type(param_ty.hir_id);
+        let rustc_middle::ty::TyKind::Ref(_, builder, rustc_middle::mir::Mutability::Mut) = param_ty.kind() else { return None };
+        as_serenity_builder_type(cx, builder)?
+    };
+
+    let builder_binding = {
+        let closure_body = cx.tcx.hir().body(closure.body);
+        let [param] = closure_body.params else { return None };
+        let rustc_hir::PatKind::Binding(_, _, binding, _) = param.pat.kind else { return None };
+        binding
+    };
 
     let (mut stmts, call_chain);
     match closure_body.value.kind {
         rustc_hir::ExprKind::MethodCall(method, receiver, args, _span) => {
             stmts = Vec::new();
-            call_chain = unravel_call_chain(cx, method, receiver, args)?;
+            call_chain = parse_call_chain(cx, method, receiver, args)?;
         }
         rustc_hir::ExprKind::Block(block, _label) => {
             stmts = block
                 .stmts
                 .iter()
-                .map(|stmt| parse_stmt(cx, stmt, binding))
+                .map(|stmt| parse_stmt(cx, stmt, builder_binding))
                 .collect::<Vec<_>>();
 
             let Some(expr) = block.expr else { return None };
             let rustc_hir::ExprKind::MethodCall(method, receiver, args, _span) = expr.kind else { return None };
-            call_chain = unravel_call_chain(cx, method, receiver, args)?;
+            call_chain = parse_call_chain(cx, method, receiver, args)?;
         }
         _ => return None,
     };
 
     Some(BuilderClosure {
         builder_type,
-        binding: binding.as_str().to_owned(),
+        binding: builder_binding.as_str().to_owned(),
         stmts,
         call_chain,
         span: expr.span,
