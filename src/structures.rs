@@ -26,7 +26,6 @@ pub struct BuilderCall {
 #[derive(Debug)]
 pub struct BuilderCallChain {
     pub receiver: rustc_span::symbol::Ident,
-    pub receiver_type: String,
     pub calls: Vec<BuilderCall>,
 }
 
