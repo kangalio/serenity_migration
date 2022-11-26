@@ -31,36 +31,45 @@ fn emit_replacement(cx: &rustc_lint::LateContext<'_>, span: rustc_span::Span, re
     );
 }
 
-#[derive(Default)]
-struct Lint {
-    touched_spans: Vec<rustc_span::Span>,
+struct Visitor<'v, 'anon>(&'anon rustc_lint::LateContext<'v>);
+impl<'v> rustc_hir::intravisit::Visitor<'v> for Visitor<'v, '_> {
+    // type NestedFilter = rustc_middle::hir::nested_filter::OnlyBodies;
+
+    fn visit_expr(&mut self, expr: &'v rustc_hir::Expr<'v>) {
+        let cx = self.0;
+        if let Some(builder_closure) = parse_builder_closure(cx, expr) {
+            emit_replacement(cx, expr.span, &replace_closure(cx, builder_closure));
+        } else {
+            rustc_hir::intravisit::walk_expr(self, expr);
+        }
+    }
+
+    fn visit_stmt(&mut self, stmt: &'v rustc_hir::Stmt<'v>) {
+        let cx = self.0;
+        if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
+            let replacement = replace_builder_call_chain_stmt(cx, stmt.span.ctxt(), call_chain);
+            emit_replacement(cx, stmt.span, &replacement);
+        } else {
+            rustc_hir::intravisit::walk_stmt(self, stmt);
+        }
+    }
 }
+
+#[derive(Default)]
+struct Lint;
 impl rustc_lint::LintPass for Lint {
     fn name(&self) -> &'static str {
         LINT.name
     }
 }
 impl<'tcx> rustc_lint::LateLintPass<'tcx> for Lint {
-    fn check_expr(
+    fn check_body(
         &mut self,
         cx: &rustc_lint::LateContext<'tcx>,
-        expr: &'tcx rustc_hir::Expr<'tcx>,
+        body: &'tcx rustc_hir::Body<'tcx>,
     ) {
-        if let Some(_overlapped) = self.touched_spans.iter().find(|s| s.overlaps(expr.span)) {
-            return;
-        }
-
-        if let Some(builder_closure) = parse_builder_closure(cx, expr) {
-            emit_replacement(cx, expr.span, &replace_closure(cx, builder_closure));
-            self.touched_spans.push(expr.span);
-        }
-    }
-
-    fn check_stmt(&mut self, cx: &rustc_lint::LateContext<'tcx>, stmt: &rustc_hir::Stmt<'tcx>) {
-        if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
-            let replacement = replace_builder_call_chain_stmt(cx, stmt.span.ctxt(), call_chain);
-            emit_replacement(cx, stmt.span, &replacement);
-        }
+        use rustc_hir::intravisit::Visitor as _;
+        Visitor(cx).visit_body(body);
     }
 }
 
