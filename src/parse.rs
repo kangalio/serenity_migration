@@ -38,12 +38,12 @@ fn path_as_ident(qpath: &rustc_hir::QPath<'_>) -> Option<rustc_span::symbol::Ide
     Some(segment.ident)
 }
 
-fn parse_call_chain(
-    cx: &rustc_lint::LateContext<'_>,
-    method: &rustc_hir::PathSegment<'_>,
-    receiver_expr: &rustc_hir::Expr<'_>,
-    args: &[rustc_hir::Expr<'_>],
-) -> Option<BuilderCallChain> {
+fn parse_call_chain<'hir>(
+    cx: &rustc_lint::LateContext<'hir>,
+    method: &rustc_hir::PathSegment<'hir>,
+    receiver_expr: &rustc_hir::Expr<'hir>,
+    args: &'hir [rustc_hir::Expr<'hir>],
+) -> Option<BuilderCallChain<'hir>> {
     let mut call_chain = match &receiver_expr.kind {
         // Recurse until we've reached the start of the chain
         rustc_hir::ExprKind::MethodCall(method, receiver_expr, args, _span) => {
@@ -52,10 +52,7 @@ fn parse_call_chain(
         // We've reached the start of the chain
         rustc_hir::ExprKind::Path(path) => {
             let Some(receiver) = path_as_ident(path) else { return None };
-            BuilderCallChain {
-                receiver,
-                calls: Vec::new(),
-            }
+            BuilderCallChain { receiver, calls: Vec::new() }
         }
         _ => return None,
     };
@@ -68,7 +65,7 @@ fn parse_call_chain(
                 if let Some(builder_closure) = parse_builder_closure(cx, arg) {
                     BuilderCallArg::NestedClosure(builder_closure)
                 } else {
-                    BuilderCallArg::Literal(arg.span)
+                    BuilderCallArg::Literal(arg)
                 }
             })
             .collect::<Vec<_>>(),
@@ -76,20 +73,20 @@ fn parse_call_chain(
     Some(call_chain)
 }
 
-pub fn parse_stmt_as_builder_call_chain(
-    cx: &rustc_lint::LateContext<'_>,
-    stmt: &rustc_hir::Stmt<'_>,
-) -> Option<BuilderCallChain> {
+pub fn parse_stmt_as_builder_call_chain<'hir>(
+    cx: &rustc_lint::LateContext<'hir>,
+    stmt: &rustc_hir::Stmt<'hir>,
+) -> Option<BuilderCallChain<'hir>> {
     let rustc_hir::StmtKind::Semi(expr) = stmt.kind else { return None };
     let rustc_hir::ExprKind::MethodCall(method, receiver, args, _span) = expr.kind else { return None };
     parse_call_chain(cx, method, receiver, args)
 }
 
-fn parse_stmt(
-    cx: &rustc_lint::LateContext<'_>,
-    stmt: &rustc_hir::Stmt<'_>,
+fn parse_stmt<'hir>(
+    cx: &rustc_lint::LateContext<'hir>,
+    stmt: &rustc_hir::Stmt<'hir>,
     expected_receiver: rustc_span::symbol::Ident,
-) -> PreBuilderCallStatement {
+) -> PreBuilderCallStatement<'hir> {
     if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
         // In `|a| { b.call() }`, a and b must be the same
         if call_chain.receiver == expected_receiver {
@@ -99,25 +96,25 @@ fn parse_stmt(
     PreBuilderCallStatement::Verbatim(stmt.span)
 }
 
-fn parse_closure_body(
-    cx: &rustc_lint::LateContext<'_>,
+fn parse_closure_body<'hir>(
+    cx: &rustc_lint::LateContext<'hir>,
     builder_binding: rustc_span::symbol::Ident,
-    body: &rustc_hir::Body<'_>,
-) -> Option<(Vec<PreBuilderCallStatement>, BuilderCallChain)> {
-    Some(match &body.value.kind {
+    body: &rustc_hir::Expr<'hir>,
+) -> Option<(Vec<PreBuilderCallStatement<'hir>>, BuilderCallChain<'hir>)> {
+    Some(match &body.kind {
         rustc_hir::ExprKind::MethodCall(method, receiver, args, _span) => {
             (Vec::new(), parse_call_chain(cx, method, receiver, args)?)
         }
         rustc_hir::ExprKind::Block(block, _label) => {
-            let stmts = block
+            let mut stmts = block
                 .stmts
                 .iter()
                 .map(|stmt| parse_stmt(cx, stmt, builder_binding))
                 .collect::<Vec<_>>();
 
             let Some(expr) = block.expr else { return None };
-            let rustc_hir::ExprKind::MethodCall(method, receiver, args, _span) = expr.kind else { return None };
-            let call_chain = parse_call_chain(cx, method, receiver, args)?;
+            let (more_stmts, call_chain) = parse_closure_body(cx, builder_binding, expr)?;
+            stmts.extend(more_stmts);
 
             (stmts, call_chain)
         }
@@ -127,19 +124,16 @@ fn parse_closure_body(
                 return None;
             }
 
-            (Vec::new(), BuilderCallChain {
-                receiver: builder_binding,
-                calls: Vec::new(),
-            })
+            (Vec::new(), BuilderCallChain { receiver: builder_binding, calls: Vec::new() })
         }
         _ => return None,
     })
 }
 
-pub fn parse_builder_closure(
-    cx: &rustc_lint::LateContext<'_>,
-    expr: &rustc_hir::Expr<'_>,
-) -> Option<BuilderClosure> {
+pub fn parse_builder_closure<'hir>(
+    cx: &rustc_lint::LateContext<'hir>, // Closure body comes from cx, hence 'hir lifetime
+    expr: &rustc_hir::Expr<'hir>,
+) -> Option<BuilderClosure<'hir>> {
     let rustc_hir::ExprKind::Closure(closure) = &expr.kind else { return None };
     let closure_body = cx.tcx.hir().body(closure.body);
 
@@ -156,7 +150,9 @@ pub fn parse_builder_closure(
         binding
     };
 
-    let (stmts, call_chain) = parse_closure_body(cx, builder_binding, closure_body)?;
+    let (stmts, call_chain) = parse_closure_body(cx, builder_binding, closure_body.value)?;
+
+    dbg!(&builder_type);
 
     Some(BuilderClosure {
         builder_type,

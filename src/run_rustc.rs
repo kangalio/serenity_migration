@@ -19,7 +19,7 @@ static LINT: rustc_lint::Lint = rustc_lint::Lint {
 fn emit_replacement(cx: &rustc_lint::LateContext<'_>, span: rustc_span::Span, replacement: &str) {
     cx.lint(
         &LINT,
-        "closure-style builders will break in the next version of serenity",
+        "closure-style builders have been replaced in the next version of serenity",
         |b| {
             b.span_note(span, "replace this...").span_suggestion(
                 span,
@@ -31,7 +31,10 @@ fn emit_replacement(cx: &rustc_lint::LateContext<'_>, span: rustc_span::Span, re
     );
 }
 
-struct Lint;
+#[derive(Default)]
+struct Lint {
+    touched_spans: Vec<rustc_span::Span>,
+}
 impl rustc_lint::LintPass for Lint {
     fn name(&self) -> &'static str {
         LINT.name
@@ -43,8 +46,13 @@ impl<'tcx> rustc_lint::LateLintPass<'tcx> for Lint {
         cx: &rustc_lint::LateContext<'tcx>,
         expr: &'tcx rustc_hir::Expr<'tcx>,
     ) {
+        if let Some(_overlapped) = self.touched_spans.iter().find(|s| s.overlaps(expr.span)) {
+            return;
+        }
+
         if let Some(builder_closure) = parse_builder_closure(cx, expr) {
             emit_replacement(cx, expr.span, &replace_closure(cx, builder_closure));
+            self.touched_spans.push(expr.span);
         }
     }
 
@@ -61,7 +69,7 @@ impl rustc_driver::Callbacks for RustcCallbacks {
     fn config(&mut self, config: &mut rustc_interface::Config) {
         // Called on every crate
         config.register_lints = Some(Box::new(|session, lints| {
-            lints.late_passes.push(Box::new(|_cx| Box::new(Lint)));
+            lints.late_passes.push(Box::new(|_cx| Box::new(Lint::default())));
         }));
     }
 }
@@ -77,7 +85,5 @@ pub fn run_rustc() {
         "/home/kangalioo/.rustup/toolchains/nightly-2022-11-03-x86_64-unknown-linux-gnu".into(),
     );
 
-    rustc_driver::RunCompiler::new(&rustc_args, &mut RustcCallbacks)
-        .run()
-        .unwrap();
+    rustc_driver::RunCompiler::new(&rustc_args, &mut RustcCallbacks).run().unwrap();
 }
