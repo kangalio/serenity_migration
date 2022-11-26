@@ -33,8 +33,6 @@ fn emit_replacement(cx: &rustc_lint::LateContext<'_>, span: rustc_span::Span, re
 
 struct Visitor<'v, 'anon>(&'anon rustc_lint::LateContext<'v>);
 impl<'v> rustc_hir::intravisit::Visitor<'v> for Visitor<'v, '_> {
-    // type NestedFilter = rustc_middle::hir::nested_filter::OnlyBodies;
-
     fn visit_expr(&mut self, expr: &'v rustc_hir::Expr<'v>) {
         let cx = self.0;
         if let Some(builder_closure) = parse_builder_closure(cx, expr) {
