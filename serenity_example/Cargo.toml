@@ -11,5 +11,6 @@ dotenv = { version = "0.15.0" }
 [dependencies.serenity]
 git = "https://github.com/serenity-rs/serenity"
 branch = "current"
+# branch = "next"
 default-features = false
 features = ["client", "gateway", "rustls_backend", "model", "collector"]
