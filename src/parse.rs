@@ -152,8 +152,6 @@ pub fn parse_builder_closure<'hir>(
 
     let (stmts, call_chain) = parse_closure_body(cx, builder_binding, closure_body.value)?;
 
-    dbg!(&builder_type);
-
     Some(BuilderClosure {
         builder_type,
         binding: builder_binding.as_str().to_owned(),

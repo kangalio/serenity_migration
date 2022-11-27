@@ -31,10 +31,20 @@ fn emit_replacement(cx: &rustc_lint::LateContext<'_>, span: rustc_span::Span, re
     );
 }
 
-struct Visitor<'v, 'anon>(&'anon rustc_lint::LateContext<'v>);
-impl<'v> rustc_hir::intravisit::Visitor<'v> for Visitor<'v, '_> {
-    fn visit_expr(&mut self, expr: &'v rustc_hir::Expr<'v>) {
-        let cx = self.0;
+struct Visitor<'hir, 'anon> {
+    cx: &'anon rustc_lint::LateContext<'hir>,
+    has_suggested_use: bool,
+}
+impl<'hir> rustc_hir::intravisit::Visitor<'hir> for Visitor<'hir, '_> {
+    type NestedFilter = rustc_middle::hir::nested_filter::OnlyBodies;
+    type Map = rustc_middle::hir::map::Map<'hir>;
+
+    fn nested_visit_map(&mut self) -> Self::Map {
+        self.cx.tcx.hir()
+    }
+
+    fn visit_expr(&mut self, expr: &'hir rustc_hir::Expr<'hir>) {
+        let cx = self.cx;
         if let Some(builder_closure) = parse_builder_closure(cx, expr) {
             emit_replacement(cx, expr.span, &replace_closure(cx, builder_closure));
         } else {
@@ -42,8 +52,8 @@ impl<'v> rustc_hir::intravisit::Visitor<'v> for Visitor<'v, '_> {
         }
     }
 
-    fn visit_stmt(&mut self, stmt: &'v rustc_hir::Stmt<'v>) {
-        let cx = self.0;
+    fn visit_stmt(&mut self, stmt: &'hir rustc_hir::Stmt<'hir>) {
+        let cx = self.cx;
         if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
             let replacement = replace_builder_call_chain_stmt(cx, stmt.span.ctxt(), call_chain);
             emit_replacement(cx, stmt.span, &replacement);
@@ -61,13 +71,21 @@ impl rustc_lint::LintPass for Lint {
     }
 }
 impl<'tcx> rustc_lint::LateLintPass<'tcx> for Lint {
-    fn check_body(
+    fn check_fn(
         &mut self,
         cx: &rustc_lint::LateContext<'tcx>,
+        kind: rustc_hir::intravisit::FnKind<'tcx>,
+        _: &'tcx rustc_hir::FnDecl<'tcx>,
         body: &'tcx rustc_hir::Body<'tcx>,
+        span: rustc_span::Span,
+        _: rustc_hir::HirId,
     ) {
         use rustc_hir::intravisit::Visitor as _;
-        Visitor(cx).visit_body(body);
+        if let rustc_hir::intravisit::FnKind::Closure = kind {
+            return;
+        }
+        let mut visitor = Visitor { cx, has_suggested_use: false };
+        visitor.visit_body(body);
     }
 }
 
