@@ -2,13 +2,6 @@
 //! pattern
 
 #[derive(Debug)]
-pub enum PreBuilderCallStatement<'hir> {
-    Verbatim(rustc_span::Span),
-    /// Like the `b.foo().bar();` in `.builder(|b| { b.foo().bar(); b.field() })`
-    BuilderCallChain(BuilderCallChain<'hir>),
-}
-
-#[derive(Debug)]
 pub enum BuilderCallArg<'hir> {
     /// Like in `.content("hi!")`
     Literal(&'hir rustc_hir::Expr<'hir>),
@@ -35,7 +28,7 @@ pub struct BuilderClosure<'hir> {
     pub builder_type: String,
     pub binding: String,
     /// Like `stmts` in `.send_message(|b| { stmts; b.content() })`
-    pub stmts: Vec<PreBuilderCallStatement<'hir>>,
+    pub stmts: Vec<&'hir rustc_hir::Stmt<'hir>>,
     pub call_chain: BuilderCallChain<'hir>,
     pub span: rustc_span::Span,
 }

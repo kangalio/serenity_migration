@@ -3,7 +3,7 @@
 use crate::structures::*;
 
 /// `serenity::builder::CreateAMess<'_>` -> `"CreateAMess"
-fn as_serenity_builder_type(
+pub fn as_serenity_builder_type(
     cx: &rustc_lint::LateContext<'_>,
     ty: &rustc_middle::ty::Ty<'_>,
 ) -> Option<String> {
@@ -82,39 +82,28 @@ pub fn parse_stmt_as_builder_call_chain<'hir>(
     parse_call_chain(cx, method, receiver, args)
 }
 
-fn parse_stmt<'hir>(
-    cx: &rustc_lint::LateContext<'hir>,
-    stmt: &rustc_hir::Stmt<'hir>,
-    expected_receiver: rustc_span::symbol::Ident,
-) -> PreBuilderCallStatement<'hir> {
-    if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
-        // In `|a| { b.call() }`, a and b must be the same
-        if call_chain.receiver == expected_receiver {
-            return PreBuilderCallStatement::BuilderCallChain(call_chain);
-        }
-    }
-    PreBuilderCallStatement::Verbatim(stmt.span)
-}
-
 fn parse_closure_body<'hir>(
     cx: &rustc_lint::LateContext<'hir>,
     builder_binding: rustc_span::symbol::Ident,
     body: &rustc_hir::Expr<'hir>,
-) -> Option<(Vec<PreBuilderCallStatement<'hir>>, BuilderCallChain<'hir>)> {
+) -> Option<(Vec<&'hir rustc_hir::Stmt<'hir>>, BuilderCallChain<'hir>)> {
     Some(match &body.kind {
         rustc_hir::ExprKind::MethodCall(method, receiver, args, _span) => {
             (Vec::new(), parse_call_chain(cx, method, receiver, args)?)
         }
         rustc_hir::ExprKind::Block(block, _label) => {
-            let mut stmts = block
-                .stmts
-                .iter()
-                .map(|stmt| parse_stmt(cx, stmt, builder_binding))
-                .collect::<Vec<_>>();
-
             let Some(expr) = block.expr else { return None };
-            let (more_stmts, call_chain) = parse_closure_body(cx, builder_binding, expr)?;
-            stmts.extend(more_stmts);
+            let rustc_hir::ExprKind::MethodCall(method, receiver, args, _span) = &expr.kind else { return None };
+            let mut call_chain = parse_call_chain(cx, method, receiver, args)?;
+
+            let mut stmts = Vec::new();
+            for stmt in block.stmts {
+                if let Some(stmt_call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
+                    call_chain.calls.extend(stmt_call_chain.calls);
+                } else {
+                    stmts.push(stmt);
+                }
+            }
 
             (stmts, call_chain)
         }
@@ -160,3 +149,21 @@ pub fn parse_builder_closure<'hir>(
         span: expr.span,
     })
 }
+
+// /// In `BuilderType::default()`, returns the `default` span.
+// pub fn builder_default_span<'hir>(
+//     cx: &rustc_lint::LateContext<'hir>,
+//     expr: &rustc_hir::Expr<'hir>,
+// ) -> Option<rustc_span::Span> {
+//     let syntax_ctxt = expr.span.ctxt();
+
+//     let rustc_hir::ExprKind::Call(fn_, args) = &expr.kind else { return None };
+//     let rustc_hir::ExprKind::Path(qpath) = &fn_.kind else { return None };
+//     let rustc_hir::QPath::TypeRelative(builder_type, default_method) = qpath else { return None };
+//     let Some(_builder_type) = as_serenity_builder_type(cx, builder_type) else { return None };
+//     if default_method.ident.as_str() != "default" {
+//         return None;
+//     };
+
+//     Some(default_method.ident.span)
+// }

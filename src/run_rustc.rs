@@ -33,7 +33,6 @@ fn emit_replacement(cx: &rustc_lint::LateContext<'_>, span: rustc_span::Span, re
 
 struct Visitor<'hir, 'anon> {
     cx: &'anon rustc_lint::LateContext<'hir>,
-    has_suggested_use: bool,
 }
 impl<'hir> rustc_hir::intravisit::Visitor<'hir> for Visitor<'hir, '_> {
     type NestedFilter = rustc_middle::hir::nested_filter::OnlyBodies;
@@ -46,7 +45,9 @@ impl<'hir> rustc_hir::intravisit::Visitor<'hir> for Visitor<'hir, '_> {
     fn visit_expr(&mut self, expr: &'hir rustc_hir::Expr<'hir>) {
         let cx = self.cx;
         if let Some(builder_closure) = parse_builder_closure(cx, expr) {
-            emit_replacement(cx, expr.span, &replace_closure(cx, builder_closure));
+            emit_replacement(cx, expr.span, &replace_closure(cx, &builder_closure));
+        // } else if let Some(default_span) = builder_default_span(cx, expr) {
+        //     emit_replacement(cx, default_span, "new");
         } else {
             rustc_hir::intravisit::walk_expr(self, expr);
         }
@@ -55,7 +56,7 @@ impl<'hir> rustc_hir::intravisit::Visitor<'hir> for Visitor<'hir, '_> {
     fn visit_stmt(&mut self, stmt: &'hir rustc_hir::Stmt<'hir>) {
         let cx = self.cx;
         if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
-            let replacement = replace_builder_call_chain_stmt(cx, stmt.span.ctxt(), call_chain);
+            let replacement = replace_builder_call_chain_stmt(cx, stmt.span.ctxt(), &call_chain);
             emit_replacement(cx, stmt.span, &replacement);
         } else {
             rustc_hir::intravisit::walk_stmt(self, stmt);
@@ -84,7 +85,7 @@ impl<'tcx> rustc_lint::LateLintPass<'tcx> for Lint {
         if let rustc_hir::intravisit::FnKind::Closure = kind {
             return;
         }
-        let mut visitor = Visitor { cx, has_suggested_use: false };
+        let mut visitor = Visitor { cx };
         visitor.visit_body(body);
     }
 }
