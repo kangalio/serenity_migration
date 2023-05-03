@@ -64,7 +64,7 @@ impl<'tcx> rustc_lint::LateLintPass<'tcx> for Lint {
         _: &'tcx rustc_hir::FnDecl<'tcx>,
         body: &'tcx rustc_hir::Body<'tcx>,
         span: rustc_span::Span,
-        _: rustc_hir::HirId,
+        _: rustc_span::def_id::LocalDefId,
     ) {
         use rustc_hir::intravisit::Visitor as _;
         if let rustc_hir::intravisit::FnKind::Closure = kind {
@@ -93,7 +93,7 @@ pub fn run_rustc() {
     // Not sure why we have to manually add sysroot... won't work otherwise
     rustc_args.push("--sysroot".into());
     rustc_args.push(
-        "/home/kangalioo/.rustup/toolchains/nightly-2022-11-03-x86_64-unknown-linux-gnu".into(),
+        "/home/kangalioo/.rustup/toolchains/nightly-2023-05-03-x86_64-unknown-linux-gnu".into(),
     );
 
     rustc_driver::RunCompiler::new(&rustc_args, &mut RustcCallbacks).run().unwrap();
