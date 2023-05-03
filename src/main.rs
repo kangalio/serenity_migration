@@ -12,10 +12,14 @@ extern crate rustc_middle;
 extern crate rustc_resolve;
 extern crate rustc_span;
 
-mod parse;
-mod replace;
+mod migrate;
+mod nodes;
 mod run_rustc;
-mod structures;
+mod old {
+    mod parse;
+    mod replace;
+    mod structures;
+}
 
 fn main() {
     run_rustc::run_rustc();

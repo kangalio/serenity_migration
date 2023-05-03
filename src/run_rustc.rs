@@ -2,8 +2,6 @@
 
 use rustc_lint::LintContext as _;
 
-use crate::{parse::*, replace::*};
-
 static LINT: rustc_lint::Lint = rustc_lint::Lint {
     name: "serenity_0_12_incompatibilities",
     default_level: rustc_lint::Level::Deny,
@@ -43,23 +41,10 @@ impl<'hir> rustc_hir::intravisit::Visitor<'hir> for Visitor<'hir, '_> {
     }
 
     fn visit_expr(&mut self, expr: &'hir rustc_hir::Expr<'hir>) {
-        let cx = self.cx;
-        if let Some(builder_closure) = parse_builder_closure(cx, expr) {
-            emit_replacement(cx, expr.span, &replace_closure(cx, &builder_closure));
-        // } else if let Some(default_span) = builder_default_span(cx, expr) {
-        //     emit_replacement(cx, default_span, "new");
+        if let Some(replacement) = crate::migrate::migrate(crate::nodes::Expr::new(self.cx, expr)) {
+            emit_replacement(self.cx, expr.span, &replacement);
         } else {
             rustc_hir::intravisit::walk_expr(self, expr);
-        }
-    }
-
-    fn visit_stmt(&mut self, stmt: &'hir rustc_hir::Stmt<'hir>) {
-        let cx = self.cx;
-        if let Some(call_chain) = parse_stmt_as_builder_call_chain(cx, stmt) {
-            let replacement = replace_builder_call_chain_stmt(cx, stmt.span.ctxt(), &call_chain);
-            emit_replacement(cx, stmt.span, &replacement);
-        } else {
-            rustc_hir::intravisit::walk_stmt(self, stmt);
         }
     }
 }

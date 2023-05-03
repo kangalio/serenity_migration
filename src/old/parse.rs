@@ -1,6 +1,6 @@
 //! Provides functions to parse HIR into our structures
 
-use crate::structures::*;
+use super::structures::*;
 
 /// `serenity::builder::CreateAMess<'_>` -> `"CreateAMess"
 pub fn as_serenity_builder_type(

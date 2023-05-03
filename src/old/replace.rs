@@ -2,7 +2,7 @@
 
 use rustc_lint::LintContext as _;
 
-use crate::structures::*;
+use super::structures::*;
 
 // fn get_line_indent(
 //     source: &rustc_span::source_map::SourceMap,
